@@ -38,28 +38,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
 <head>
     <title>Dashboard</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <a class="navbar-brand" href="#">Seu Aplicativo</a>
-        <div class="collapse navbar-collapse">
-            <ul class="navbar-nav mr-auto">
-                <!-- Outros itens do menu -->
-            </ul>
-            <a href="logout.php" class="btn btn-danger my-2 my-sm-0">Logout</a>
-        </div>
+    <a class="navbar-brand" href="#">Seu Aplicativo</a>
+    <div class="collapse navbar-collapse">
+        <ul class="navbar-nav mr-auto">
+            <!-- Outros itens do menu -->
+        </ul>
+        <a href="logout.php" class="btn btn-danger my-2 my-sm-0">Logout</a>
+    </div>
 </nav>
 <div class="container">
     <h2>Bem-vindo ao seu Portal de Backup</h2>
 
-    <!-- Formulário de upload -->
-    <form action="dashboard.php" method="POST" enctype="multipart/form-data">
+    <!-- Formulário de upload com barra de progresso -->
+    <form id="uploadForm" method="POST" enctype="multipart/form-data">
         <div class="form-group">
             <label for="file">Enviar Arquivo:</label>
-            <input type="file" class="form-control" name="file" required>
+            <input type="file" class="form-control" name="file" id="fileInput" required>
         </div>
         <button type="submit" class="btn btn-primary">Fazer Upload</button>
     </form>
+
+    <!-- Barra de progresso -->
+    <div class="progress mt-3" style="display: none;" id="progressWrapper">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+    </div>
+    <div id="progressText" class="mt-2"></div>
 
     <!-- Mensagem de Feedback do Upload -->
     <?php echo $uploadMessage; ?>
@@ -86,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
                     <td>{$row['upload_date']}</td>
                     <td>
                         <a href='download.php?id={$row['id']}' class='btn btn-success'>Baixar</a>
-                        <a href='edit.php?id={$row['id']}' class='btn btn-warning'>Editar</a>
                         <a href='delete.php?id={$row['id']}' class='btn btn-danger'>Deletar</a>
                     </td>
                   </tr>";
@@ -95,5 +101,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
         </tbody>
     </table>
 </div>
+
+<script>
+// Função para lidar com o upload e mostrar a barra de progresso
+$('#uploadForm').on('submit', function(e) {
+    e.preventDefault(); // Impede o envio padrão do formulário
+    
+    var formData = new FormData(this); // Cria o FormData
+    var fileInput = $('#fileInput').val();
+    
+    if (!fileInput) {
+        alert('Selecione um arquivo.');
+        return;
+    }
+
+    $.ajax({
+        xhr: function() {
+            var xhr = new window.XMLHttpRequest();
+            // Progresso do upload
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    var percent = Math.round((e.loaded / e.total) * 100);
+                    $('#progressWrapper').show();
+                    $('#progressBar').css('width', percent + '%');
+                    $('#progressBar').attr('aria-valuenow', percent);
+                    $('#progressText').text('Progresso: ' + percent + '%');
+                }
+            }, false);
+            return xhr;
+        },
+        type: 'POST',
+        url: 'dashboard.php', // Envia o arquivo para a própria página
+        data: formData,
+        contentType: false,
+        processData: false,
+        success: function(response) {
+            location.reload(); // Recarrega a página ao finalizar o upload
+        },
+        error: function() {
+            alert('Erro ao enviar o arquivo. Tente novamente.');
+        }
+    });
+});
+</script>
+
 </body>
 </html>
