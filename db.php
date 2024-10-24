@@ -2,7 +2,7 @@
 $host = 'localhost';
 $dbname = 'backup_portal';
 $user = 'root';
-$pass = '';
+$pass = 'root';
 
 try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname", $user, $pass);
