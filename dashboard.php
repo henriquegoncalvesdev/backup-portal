@@ -2,14 +2,42 @@
 include 'db.php';
 session_start();
 
-// Verifica se o usuário está logado
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit;
 }
 
-// Variável para armazenar mensagem de feedback
 $uploadMessage = "";
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
+    $user_id = $_SESSION['user_id'];
+    $folder = $_POST['folder'] ?? 'root';
+    $filename = $_FILES['file']['name'];
+    $filepath = 'uploads/' . $user_id . '/' . $folder . '/' . basename($filename);
+    $size = $_FILES['file']['size'];
+
+    if (!file_exists("uploads/$user_id/$folder")) {
+        mkdir("uploads/$user_id/$folder", 0777, true);
+    }
+
+    if (move_uploaded_file($_FILES['file']['tmp_name'], $filepath)) {
+        $stmt = $conn->prepare("INSERT INTO files (user_id, filename, filepath, size, folder) VALUES (?, ?, ?, ?, ?)");
+        if ($stmt->execute([$user_id, $filename, $filepath, $size, $folder])) {
+            $uploadMessage = "<div class='alert alert-success'>Upload realizado com sucesso!</div>";
+        } else {
+            $uploadMessage = "<div class='alert alert-danger'>Erro ao salvar as informações do arquivo no banco de dados.</div>";
+        }
+    } else {
+        $uploadMessage = "<div class='alert alert-danger'>Erro ao enviar o arquivo. Tente novamente.</div>";
+    }
+}
+
+if (isset($_POST['new_folder'])) {
+    $folder_name = $_POST['new_folder'];
+    if (!file_exists("uploads/{$_SESSION['user_id']}/$folder_name")) {
+        mkdir("uploads/{$_SESSION['user_id']}/$folder_name", 0777, true);
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -21,6 +49,7 @@ $uploadMessage = "";
     <style>
         .progress { display: none; margin-top: 10px; }
         .progress-bar { width: 0%; }
+        .folder { cursor: pointer; }
     </style>
 </head>
 <body>
@@ -40,9 +69,28 @@ $uploadMessage = "";
         <div class="form-group">
             <label for="file">Enviar Arquivo:</label>
             <input type="file" class="form-control" id="file" name="file" required>
+            <label for="folder">Selecione a pasta:</label>
+            <select class="form-control" name="folder" id="folder">
+                <option value="root">Pasta Raiz</option>
+                <?php
+                $user_id = $_SESSION['user_id'];
+                $stmt = $conn->prepare("SELECT DISTINCT folder FROM files WHERE user_id = ?");
+                $stmt->execute([$user_id]);
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    echo "<option value='{$row['folder']}'>{$row['folder']}</option>";
+                }
+                ?>
+            </select>
         </div>
         <button type="button" class="btn btn-primary" onclick="uploadFile()">Fazer Upload</button>
         <button type="button" id="cancelButton" class="btn btn-secondary" style="display:none;" onclick="cancelUpload()">Cancelar</button>
+    </form>
+
+    <form method="POST" class="mt-3">
+        <div class="form-group">
+            <input type="text" class="form-control" name="new_folder" placeholder="Nova Pasta">
+        </div>
+        <button type="submit" class="btn btn-success">Criar Pasta</button>
     </form>
 
     <!-- Barra de Progresso e Status -->
@@ -50,24 +98,27 @@ $uploadMessage = "";
         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
     </div>
     <div id="uploadStatus"></div>
-    <div id="uploadInfo"></div>
 
-    <!-- Listar arquivos enviados pelo usuário -->
+    <!-- Listar arquivos por pasta -->
     <h3>Seus Arquivos</h3>
-    <table class="table table-striped">
-        <thead>
-        <tr>
-            <th>Nome do Arquivo</th>
-            <th>Data do Upload</th>
-            <th>Ações</th>
-        </tr>
-        </thead>
-        <tbody>
-        <?php
-        $user_id = $_SESSION['user_id'];
-        $stmt = $conn->prepare("SELECT * FROM files WHERE user_id = ? ORDER BY upload_date DESC");
-        $stmt->execute([$user_id]);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    <?php
+    $stmt = $conn->prepare("SELECT DISTINCT folder FROM files WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    while ($folderRow = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $folderName = $folderRow['folder'];
+        echo "<h4 class='folder'>$folderName</h4>";
+        echo "<table class='table table-striped'>
+                <thead>
+                    <tr>
+                        <th>Nome do Arquivo</th>
+                        <th>Data do Upload</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>";
+        $fileStmt = $conn->prepare("SELECT * FROM files WHERE user_id = ? AND folder = ? ORDER BY upload_date DESC");
+        $fileStmt->execute([$user_id, $folderName]);
+        while ($row = $fileStmt->fetch(PDO::FETCH_ASSOC)) {
             echo "<tr>
                     <td>{$row['filename']}</td>
                     <td>{$row['upload_date']}</td>
@@ -77,9 +128,10 @@ $uploadMessage = "";
                     </td>
                   </tr>";
         }
-        ?>
-        </tbody>
-    </table>
+        echo "</tbody></table>";
+    }
+    ?>
+
 </div>
 
 <script>
@@ -92,68 +144,39 @@ $uploadMessage = "";
 
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('folder', document.getElementById('folder').value);
 
         xhr = new XMLHttpRequest();
-
-        // Exibir a barra de progresso e o botão cancelar
         document.querySelector('.progress').style.display = 'block';
         document.getElementById('cancelButton').style.display = 'inline-block';
         document.getElementById('uploadStatus').innerText = '';
-        document.getElementById('uploadInfo').innerText = '';
 
-        xhr.upload.addEventListener('progress', updateProgress);
-        xhr.open('POST', 'upload.php', true);
-
-        // Função para atualizar a barra de progresso e exibir informações adicionais
         xhr.upload.onprogress = function (event) {
             if (event.lengthComputable) {
                 const percentComplete = (event.loaded / event.total) * 100;
-                const mbps = (event.loaded / (performance.now() / 1000) / 1024 / 1024).toFixed(2); // Velocidade em MB/s
-                const remainingTime = ((event.total - event.loaded) / (event.loaded / (performance.now() / 1000))).toFixed(2); // Tempo restante em segundos
-
                 document.querySelector('.progress-bar').style.width = percentComplete + '%';
                 document.querySelector('.progress-bar').innerText = Math.floor(percentComplete) + '%';
-                document.getElementById('uploadInfo').innerText = `Velocidade: ${mbps} MB/s | Tempo restante: ${remainingTime} s`;
             }
         };
 
-        // Função de resposta
         xhr.onload = function () {
-            const response = JSON.parse(xhr.responseText);
-            if (response.status === 'success') {
-                document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-success'>" + response.message + "</div>";
-                document.querySelector('.progress-bar').style.width = '100%';
-                document.querySelector('.progress-bar').innerText = '100%';
-                location.reload();
-            } else {
-                document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-danger'>" + response.message + "</div>";
-            }
-            document.getElementById('cancelButton').style.display = 'none';
+            location.reload();
         };
 
         xhr.onerror = function () {
             document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-danger'>Erro ao enviar o arquivo.</div>";
         };
 
+        xhr.open('POST', 'upload.php', true);
         xhr.send(formData);
     }
 
-    function updateProgress(event) {
-        if (event.lengthComputable) {
-            const percentComplete = Math.floor((event.loaded / event.total) * 100);
-            document.querySelector('.progress-bar').style.width = percentComplete + '%';
-            document.querySelector('.progress-bar').innerText = percentComplete + '%';
-        }
-    }
-
-    // Função para cancelar o upload
     function cancelUpload() {
         if (xhr) {
             xhr.abort();
             document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-warning'>Upload cancelado pelo usuário.</div>";
             document.querySelector('.progress').style.display = 'none';
             document.getElementById('cancelButton').style.display = 'none';
-            document.getElementById('uploadInfo').innerText = '';
         }
     }
 </script>
