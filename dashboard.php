@@ -1,15 +1,10 @@
 <?php
 include 'db.php';
 session_start();
-
-// Verifica se o usuário está logado
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit;
 }
-
-// Variável para armazenar mensagem de feedback
-$uploadMessage = "";
 ?>
 
 <!DOCTYPE html>
@@ -51,40 +46,11 @@ $uploadMessage = "";
     </div>
     <div id="uploadStatus"></div>
     <div id="uploadInfo"></div>
-
-    <!-- Listar arquivos enviados pelo usuário -->
-    <h3>Seus Arquivos</h3>
-    <table class="table table-striped">
-        <thead>
-        <tr>
-            <th>Nome do Arquivo</th>
-            <th>Data do Upload</th>
-            <th>Ações</th>
-        </tr>
-        </thead>
-        <tbody>
-        <?php
-        $user_id = $_SESSION['user_id'];
-        $stmt = $conn->prepare("SELECT * FROM files WHERE user_id = ? ORDER BY upload_date DESC");
-        $stmt->execute([$user_id]);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            echo "<tr>
-                    <td>{$row['filename']}</td>
-                    <td>{$row['upload_date']}</td>
-                    <td>
-                        <a href='download.php?id={$row['id']}' class='btn btn-success'>Baixar</a>
-                        <a href='delete.php?id={$row['id']}' class='btn btn-danger'>Deletar</a>
-                    </td>
-                  </tr>";
-        }
-        ?>
-        </tbody>
-    </table>
 </div>
 
 <script>
     let xhr;
-    let startTime; // Define o início do upload para calcular a velocidade e o tempo restante
+    let startTime;
 
     function uploadFile() {
         const fileInput = document.getElementById('file');
@@ -95,45 +61,32 @@ $uploadMessage = "";
         formData.append('file', file);
 
         xhr = new XMLHttpRequest();
+        startTime = new Date().getTime();
 
-        // Exibir a barra de progresso e o botão cancelar
         document.querySelector('.progress').style.display = 'block';
         document.getElementById('cancelButton').style.display = 'inline-block';
-        document.getElementById('uploadStatus').innerText = '';
-        document.getElementById('uploadInfo').innerText = '';
 
-        startTime = new Date().getTime(); // Captura o tempo de início em milissegundos
-
-        xhr.upload.addEventListener('progress', updateProgress);
-        xhr.open('POST', 'upload.php', true);
-
-        // Função para atualizar a barra de progresso e exibir informações adicionais
-        xhr.upload.onprogress = function (event) {
+        xhr.upload.addEventListener('progress', function (event) {
             if (event.lengthComputable) {
                 const percentComplete = (event.loaded / event.total) * 100;
                 const currentTime = new Date().getTime();
-                const timeElapsed = (currentTime - startTime) / 1000; // Tempo em segundos
+                const timeElapsed = (currentTime - startTime) / 1000;
 
-                const uploadRate = (event.loaded / 1024 / 1024 / timeElapsed).toFixed(2); // Taxa em MB/s
-                const remainingTime = ((event.total - event.loaded) / (event.loaded / timeElapsed)).toFixed(2); // Tempo restante em segundos
+                const uploadRate = (event.loaded / 1024 / 1024 / timeElapsed).toFixed(2); // MB/s
+                const remainingTime = ((event.total - event.loaded) / (event.loaded / timeElapsed)).toFixed(2);
 
                 document.querySelector('.progress-bar').style.width = percentComplete + '%';
                 document.querySelector('.progress-bar').innerText = Math.floor(percentComplete) + '%';
                 document.getElementById('uploadInfo').innerText = `Velocidade: ${uploadRate} MB/s | Tempo restante: ${remainingTime} s`;
             }
-        };
+        });
 
-        // Função de resposta
+        xhr.open('POST', 'upload.php', true);
         xhr.onload = function () {
             const response = JSON.parse(xhr.responseText);
-            if (response.status === 'success') {
-                document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-success'>" + response.message + "</div>";
-                document.querySelector('.progress-bar').style.width = '100%';
-                document.querySelector('.progress-bar').innerText = '100%';
-                location.reload();
-            } else {
-                document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-danger'>" + response.message + "</div>";
-            }
+            document.getElementById('uploadStatus').innerHTML = "<div class='alert alert-success'>" + response.message + "</div>";
+            document.querySelector('.progress-bar').style.width = '100%';
+            document.querySelector('.progress-bar').innerText = '100%';
             document.getElementById('cancelButton').style.display = 'none';
         };
 
@@ -144,15 +97,6 @@ $uploadMessage = "";
         xhr.send(formData);
     }
 
-    function updateProgress(event) {
-        if (event.lengthComputable) {
-            const percentComplete = Math.floor((event.loaded / event.total) * 100);
-            document.querySelector('.progress-bar').style.width = percentComplete + '%';
-            document.querySelector('.progress-bar').innerText = percentComplete + '%';
-        }
-    }
-
-    // Função para cancelar o upload
     function cancelUpload() {
         if (xhr) {
             xhr.abort();
