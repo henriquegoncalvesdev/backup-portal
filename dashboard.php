@@ -84,6 +84,7 @@ $uploadMessage = "";
 
 <script>
     let xhr;
+    let startTime; // Define o início do upload para calcular a velocidade e o tempo restante
 
     function uploadFile() {
         const fileInput = document.getElementById('file');
@@ -101,6 +102,8 @@ $uploadMessage = "";
         document.getElementById('uploadStatus').innerText = '';
         document.getElementById('uploadInfo').innerText = '';
 
+        startTime = new Date().getTime(); // Captura o tempo de início em milissegundos
+
         xhr.upload.addEventListener('progress', updateProgress);
         xhr.open('POST', 'upload.php', true);
 
@@ -108,12 +111,15 @@ $uploadMessage = "";
         xhr.upload.onprogress = function (event) {
             if (event.lengthComputable) {
                 const percentComplete = (event.loaded / event.total) * 100;
-                const mbps = (event.loaded / (performance.now() / 1000) / 1024 / 1024).toFixed(2); // Velocidade em MB/s
-                const remainingTime = ((event.total - event.loaded) / (event.loaded / (performance.now() / 1000))).toFixed(2); // Tempo restante em segundos
+                const currentTime = new Date().getTime();
+                const timeElapsed = (currentTime - startTime) / 1000; // Tempo em segundos
+
+                const uploadRate = (event.loaded / 1024 / 1024 / timeElapsed).toFixed(2); // Taxa em MB/s
+                const remainingTime = ((event.total - event.loaded) / (event.loaded / timeElapsed)).toFixed(2); // Tempo restante em segundos
 
                 document.querySelector('.progress-bar').style.width = percentComplete + '%';
                 document.querySelector('.progress-bar').innerText = Math.floor(percentComplete) + '%';
-                document.getElementById('uploadInfo').innerText = `Velocidade: ${mbps} MB/s | Tempo restante: ${remainingTime} s`;
+                document.getElementById('uploadInfo').innerText = `Velocidade: ${uploadRate} MB/s | Tempo restante: ${remainingTime} s`;
             }
         };
 
